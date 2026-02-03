@@ -592,6 +592,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/norma-dmm/protocol.c \
 	src/hardware/norma-dmm/api.c
 endif
+if HW_NUVOTON_NULINK3_PRO
+src_libdrivers_la_SOURCES += \
+	src/hardware/nuvoton-nulink3-pro/protocol.h \
+	src/hardware/nuvoton-nulink3-pro/protocol.c \
+	src/hardware/nuvoton-nulink3-pro/api.c
+endif
 if HW_OPENBENCH_LOGIC_SNIFFER
 src_libdrivers_la_SOURCES += \
 	src/hardware/openbench-logic-sniffer/protocol.h \
