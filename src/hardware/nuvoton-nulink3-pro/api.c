@@ -23,6 +23,9 @@
 
 #define DEFAULT_SAMPLE_RATE    SR_MHZ(4)
 
+#define MIN_LIMIT_SAMPLES      (1000000)
+#define MAX_LIMIT_SAMPLES      (500000000)
+
 static const struct nubridge_profile supported_device[] =
 {
     { 0x0416, 0x200A, 7, "Nuvoton", "Nu-Link3-Pro", NULL, 0, 1024 * 1024, 6},
@@ -42,6 +45,8 @@ static const uint32_t drvopts[] =
 static const uint32_t devopts[] =
 {
     SR_CONF_CONN          | SR_CONF_GET,
+    SR_CONF_CONTINUOUS,
+    SR_CONF_LIMIT_SAMPLES | SR_CONF_SET | SR_CONF_GET | SR_CONF_LIST,
     SR_CONF_SAMPLERATE    | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
     SR_CONF_TRIGGER_MATCH | SR_CONF_LIST,
 };
@@ -258,6 +263,8 @@ static int32_t dev_open(struct sr_dev_inst *sdi)
 
     devc->limit_samples = 0 ; //devc->profile->mem_depth * 8 / NUM_CHANNELS;
 
+    devc->continuous_mode = TRUE;
+
     return SR_OK;
 }
 
@@ -303,6 +310,9 @@ static int32_t config_get(uint32_t key, GVariant **data, const struct sr_dev_ins
                 return SR_ERR;
             *data = g_variant_new_printf("%d.%d", usb->bus, usb->address);
             break;
+        case SR_CONF_LIMIT_SAMPLES:
+            *data = g_variant_new_uint64(devc->limit_samples);
+            break;
         case SR_CONF_SAMPLERATE:
             *data = g_variant_new_uint64(devc->cur_samplerate);
             break;
@@ -326,6 +336,9 @@ static int32_t config_set(uint32_t key, GVariant *data, const struct sr_dev_inst
 
     switch (key)
     {
+        case SR_CONF_LIMIT_SAMPLES:
+            devc->limit_samples = g_variant_get_uint64(data);
+            break;
         case SR_CONF_SAMPLERATE:
             if ((idx = std_u64_idx(data, devc->samplerates, devc->num_samplerates)) < 0)
                 return SR_ERR_ARG;
@@ -352,6 +365,11 @@ static int32_t config_list(uint32_t key, GVariant **data, const struct sr_dev_in
         case SR_CONF_SCAN_OPTIONS:
         case SR_CONF_DEVICE_OPTIONS:
             return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
+        case SR_CONF_LIMIT_SAMPLES:
+            if (!devc)
+                return SR_ERR_ARG;
+            *data = std_gvar_tuple_u64(MIN_LIMIT_SAMPLES, MAX_LIMIT_SAMPLES);
+            break;
         case SR_CONF_SAMPLERATE:
             if (!devc)
                 return SR_ERR_ARG;

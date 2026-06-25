@@ -39,6 +39,7 @@
 #define START_FLAGS_STOP        (1 << 1)
 
 #define MODE_TRIG_EN            (1 << 0)
+#define MODE_STREAM             (1 << 1)
 
 #define MAX_LOGIC_SAMPLERATE    SR_MHZ(22) //2CH
 
@@ -46,6 +47,8 @@
 #define ATOMIC_BYTES            sizeof(uint8_t)
 
 #define TRIGGER_HEADER_ID       0x55AAAA55
+
+#define TRANSFER_BUFFER_SIZE    (USB_PACKET_SIZE * 8)
 
 static uint32_t _get_tick_ms()
 {
@@ -290,6 +293,9 @@ static int32_t nubridge_configure(const struct sr_dev_inst *sdi)
     if (set_trigger(sdi, &cfg))
         mode |= MODE_TRIG_EN;
 
+    if (devc->continuous_mode)
+        mode |= MODE_STREAM;
+
     cfg.mode = mode;
     cfg.sample_rate = devc->cur_samplerate;
     cfg.buffer_size = devc->profile->mem_depth;
@@ -485,6 +491,7 @@ SR_PRIV struct dev_context *nubridge_dev_new(void)
     devc->cur_samplerate = 0;
     devc->limit_samples = 0;
     devc->clock_edge = EDGE_RISING;
+    devc->continuous_mode = FALSE;
 
     return devc;
 }
@@ -628,7 +635,16 @@ static void LIBUSB_CALL receive_transfer(struct libusb_transfer *transfer)
 
     if (transfer->actual_length == 0 || packet_has_error)
     {
-        resubmit_transfer(transfer);
+        if (devc->limit_samples)
+        {
+            resubmit_transfer(transfer);
+        }
+        else
+        {
+            abort_acquisition(devc);
+            free_transfer(transfer);
+        }
+
         return;
     }
 
@@ -712,11 +728,10 @@ static int32_t start_transfers(const struct sr_dev_inst *sdi, uint32_t channel_m
     usb = sdi->conn;
 
     transfer_size = MIN(transfer_size, devc->profile->mem_depth);
-    num_transfers = transfer_size / USB_PACKET_SIZE;
+    num_transfers = transfer_size / TRANSFER_BUFFER_SIZE;
 
     devc->channel_mask = channel_mask;
     devc->channel_count = channel_count;
-    devc->limit_samples = (uint64_t) (transfer_size * 8 / channel_count);
 
     devc->sent_samples = 0;
     devc->acq_aborted = FALSE;
@@ -728,7 +743,7 @@ static int32_t start_transfers(const struct sr_dev_inst *sdi, uint32_t channel_m
     if (!devc->transfers)
         return SR_ERR_MALLOC;
 
-    devc->deinterleave_buffer = g_try_malloc(ATOMIC_SAMPLES * (USB_PACKET_SIZE / (channel_count * ATOMIC_BYTES)) * sizeof(uint8_t));
+    devc->deinterleave_buffer = g_try_malloc(ATOMIC_SAMPLES * (TRANSFER_BUFFER_SIZE / (channel_count * ATOMIC_BYTES)) * sizeof(uint8_t));
     if (!devc->deinterleave_buffer)
     {
         g_free(devc->deinterleave_buffer);
@@ -738,11 +753,11 @@ static int32_t start_transfers(const struct sr_dev_inst *sdi, uint32_t channel_m
     devc->num_transfers = num_transfers;
     for (i = 0; i < num_transfers; i++)
     {
-        if (!(buf = g_try_malloc(USB_PACKET_SIZE)))
+        if (!(buf = g_try_malloc(TRANSFER_BUFFER_SIZE)))
             return SR_ERR_MALLOC;
 
         transfer = libusb_alloc_transfer(0);
-        libusb_fill_bulk_transfer(transfer, usb->devhdl, devc->endpoint_in, buf, USB_PACKET_SIZE, receive_transfer, (void *)sdi, USB_TIMEOUT);
+        libusb_fill_bulk_transfer(transfer, usb->devhdl, devc->endpoint_in, buf, TRANSFER_BUFFER_SIZE, receive_transfer, (void *)sdi, USB_TIMEOUT * 2);
 
         if ((ret = libusb_submit_transfer(transfer)) != LIBUSB_SUCCESS)
         {
