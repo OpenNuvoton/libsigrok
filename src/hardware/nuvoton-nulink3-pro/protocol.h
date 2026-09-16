@@ -33,7 +33,7 @@
 #define USB_PACKET_SIZE    (512)
 #define USB_TIMEOUT        (5 * 1000)
 
-#define MINOR_VERSION      0x0100
+#define MINOR_VERSION      0x0101
 
 enum nubridge_edge_modes
 {
@@ -126,6 +126,8 @@ struct dev_context
 
     uint8_t endpoint_in;
     uint8_t endpoint_out;
+
+    gboolean continuous_mode;
 };
 
 SR_PRIV int32_t nubridge_dev_open(struct sr_dev_inst *sdi, struct sr_dev_driver *di);
